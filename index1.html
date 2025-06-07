@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Disbusrment Report </title>
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> 
+</head>
+<body>
+    <div style="text-align:center; margin-bottom:20px;">
+        <button class="button" onclick="fetchByRange('today')">Today</button>
+        <button class="button" onclick="fetchByRange('current')">Current Month</button>
+        <button class="button" onclick="fetchByRange('previous')">Previous Month</button>
+    </div>
+    <h2 id="report-title" style="text-align:center;">Disbusrment Report</h2>
+    <div class="table-responsive">
+      <table class="table">
+        <thead id="table-head"></thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+    
+    <div class="chart-container">
+    <canvas id="barChart1" style="max-width:600px; margin:20px 0 0 40px; justify-content: center;align-items: center;  display:inline-block; height:2px !important;"></canvas>
+    <canvas id="barChart2" style="max-width:700px; margin:20px 0 0 40px;justify-content: center;align-items: center; display:inline-block ;height:2px!important;"></canvas>
+    </div>
+  <script>
+     let defaultType=null;
+     function getDateRanges(type) {
+      const now = new Date();
+      let from, to;
+      if (type === 'current') {
+        from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+        to = now.toISOString().slice(0, 10);
+
+         
+    } else if (type === 'previous') {
+        const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const year = prev.getFullYear();
+        const month = String(prev.getMonth() + 1).padStart(2, '0');
+        from = `${year}-${month}-01`;
+        
+        to = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10);
+    } else if (type === 'today') {
+        from = to = now.toISOString().slice(0, 10);
+    }
+    return {from, to};
+  }
+
+  async function fetchByRange(type) {
+    defaultType = type;
+    const { from, to } = getDateRanges(type);
+
+    try {
+        const response = await fetch(`api.php?from=${from}&to=${to}`);
+        const data = await response.json();
+
+        const h2 = document.getElementById("report-title");
+        
+        
+        if (data.length === 0) {
+            document.getElementById("table-body").innerHTML = "<tr><td colspan='100%'>No Data</td></tr>";
+            h2.style.width = "auto";
+            return;
+        }
+
+        const headers = Object.keys(data[0]);
+        document.getElementById("table-head").innerHTML = "<tr>" + headers.map(h => `<th>${h}</th>`).join('') + "</tr>";
+        document.getElementById("table-body").innerHTML = data.map(row =>
+            "<tr>" + headers.map(key => `<td>${row[key]}</td>`).join('') + "</tr>"
+        ).join('');
+
+        const table = document.querySelector("table");
+        h2.style.display = "inline-block";
+        h2.style.minWidth = table.offsetWidth + "px";
+
+        
+        let titleText = "Disbursement Report";
+
+       if (type === "current") {
+       titleText += " - Current Month";
+       } else if (type === "previous") {
+       titleText += " - Previous Month";
+       } else if (type === "today") {
+       titleText += " - Today";
+        }
+
+       h2.innerText = titleText;
+
+
+    } catch (error) {
+        console.error("Error fetching data:", error);
+    }
+  }
+
+    let barChart1, barChart2;
+
+    function drawStaticBarCharts(data) {
+            // Initialize variables to store amounts
+            let prevMonthTotal = 0 ,currentMonthToDateTotal = 0,prevMonthToDateTotal = 0,todayTotal = 0;
+
+            //Date Calculation for prevMonth
+             const now= new Date();
+             const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+             const year = prev.getFullYear();
+             const month = String(prev.getMonth() + 1).padStart(2, '0');
+             const prevMonthFirst= `${year}-${month}-01`;
+             const prevMonthDate=now.toISOString().slice(8, 10);
+             const prevMonthToToday = `${year}-${month}-${prevMonthDate}`;
+            
+             //today Date
+             const todayStr = now.toISOString().slice(0, 10);
+
+            
+            const dynamicTitle = `Prev Month (${prevMonthFirst} to ${prevMonthToToday})  vs  Today (${todayStr})`;
+
+           
+            // Process each row to extract relevant data
+          data.forEach(row => {
+                const label = row.label || '';
+                const amount = parseFloat(row.amount) || 0;
+
+                switch (label) {
+                    case 'GRAND TOTAL':
+                        currentMonthToDateTotal = amount;
+                        break;
+                    case 'Till Date':
+                        prevMonthToDateTotal = amount;
+                        break;
+                    case 'Till End':
+                        prevMonthTotal = amount;
+                        break;
+                    case 'Today':
+                        todayTotal = amount;
+                        break;
+                    default:
+                        break;
+                }
+          });
+
+            // Convert amounts to Crores for display
+        
+          const prevMonthTotalCr = Number((prevMonthTotal / 10000000).toFixed(2));
+          const currentMonthToDateTotalCr = Number((currentMonthToDateTotal / 10000000).toFixed(2));
+          const prevMonthToDateTotalCr = Number((prevMonthToDateTotal / 10000000).toFixed(2));
+          const todayTotalCr = Number((todayTotal / 10000000).toFixed(2));
+
+          // Chart Y-axis value (rounded up to next 100, plus 300 for headroom)
+          const barChart1Value = (Math.ceil(prevMonthTotalCr / 100) + 3) * 100;
+          const barChart2Value = (Math.ceil(prevMonthToDateTotalCr / 100) + 3) * 100;
+            
+
+
+            // Destroy existing charts if they exist
+          if (barChart1) barChart1.destroy();
+          if (barChart2) barChart2.destroy();
+
+            // Create first bar chart: Previous Month (Full) vs Current Month (To Today)
+          const ctx1 = document.getElementById('barChart1').getContext('2d');
+          barChart1 = new Chart(ctx1, {
+                type: 'bar',
+                data: {
+                    labels: ['Previous Month (Total)', 'Current Month (Total)'],
+                    datasets: [{
+                        label: 'Total Sum Amount (Cr)',
+                        data: [prevMonthTotalCr, currentMonthToDateTotalCr],
+                        backgroundColor: ['#0074D9', '#298c8c']
+                    }]
+                 },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { display: false },
+                        title: { display: true, 
+                          text: 'Prev Month (Total)  vs  Current Month (Total)',
+                        font: {
+                          size: 18,
+                          weight: 'bold'
+                       }
+                        }
+                    },
+                    scales: {
+                        x: {
+                             ticks: {
+                               font: {
+                               size: 16,      
+                               weight: 'bold' 
+                               }
+                             }
+                           },
+                        
+                        y: {
+                            title: { display: true, text: 'Amount (Cr)',
+                              font: {
+                                size: 18,
+                                weight: 'bold'
+                               }
+                             },
+                            min: 0,
+                            max: barChart1Value,
+                            ticks: {
+                                stepSize: 50,
+                                callback: value => value + ' Cr',
+                                font: {
+                               size: 12,      
+                               weight: 'bold',
+                               }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Create second bar chart: Previous Month (1st to Today) vs Today
+            const ctx2 = document.getElementById('barChart2').getContext('2d');
+            barChart2 = new Chart(ctx2, {
+                type: 'bar',
+                data: {
+                    labels: [`Prev Month (${prevMonthFirst}to ${prevMonthToToday})`, `Today (${todayStr})`],
+                    datasets: [{
+                        label: 'Total Sum Amount (Cr)',
+                        data: [prevMonthToDateTotalCr, todayTotalCr],
+                        backgroundColor: ['#FF851B', '#8cc5e3']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { display: false },
+                         title: { display: true, text: dynamicTitle ,
+                          font:{
+                             size: 18,
+                              weight: 'bold'
+
+                          }
+                         }
+                    },
+                    scales: {
+                          x: {
+                             ticks: {
+                               font: {
+                               size: 16,      
+                               weight: 'bold' 
+                               }
+                             }
+                           },
+                        y: {
+                            
+                            title: { display: true, text: 'Amount (Cr)',
+                              font: {
+                                size: 18,
+                                weight: 'bold'
+                               }
+                             },
+                            min: 0,
+                            max:barChart2Value ,
+                            ticks: {
+                                stepSize: 20,
+                                callback: value => value + ' Cr',
+                                font: {
+                               size: 12,      
+                               weight: 'bold' 
+                               }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+      function updateCharts() {
+            fetch('api.php')
+                .then(response => response.json())
+                .then(data => {
+                    drawStaticBarCharts(data);
+                })
+                .catch(error => console.error('Error fetching chart data:', error));
+      }
+
+
+  window.onload = () => {
+    fetchByRange('current');
+    updateCharts();
+
+    setInterval(() => {
+      if (defaultType === 'current' || defaultType === 'today') {
+        fetchByRange(defaultType);
+      }
+    }, 300000);
+  };
+</script>
+
+        
+        
+
+
+
